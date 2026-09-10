@@ -31,3 +31,4 @@ bin/
 
 /dashboard/dist/
 /dashboard/node_modules/
+.idea/

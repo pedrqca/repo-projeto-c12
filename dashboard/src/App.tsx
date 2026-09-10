@@ -1,7 +1,7 @@
 ﻿import { AlertCircle, CheckCircle2, Clock3, Gauge, ListChecks } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Header } from './components/Header'
-import { LoadingSimulation } from './components/LoadingSimulation'
+import { CookCards } from './components/CookCards'
 import { MetricCard } from './components/MetricCard'
 import { OrderList } from './components/OrderList'
 import { PerformanceStatus } from './components/PerformanceStatus'
@@ -13,22 +13,18 @@ import { useSimulation } from './hooks/useSimulation'
 
 function App() {
   const [cooks, setCooks] = useState(5)
-  const [loadingIndex, setLoadingIndex] = useState(0)
-  const { status, result, history, execute } = useSimulation()
+  const [now, setNow] = useState(() => Date.now())
+  const { status, result, history, workers, liveOrders, errorMessage, execute } = useSimulation()
   const isLoading = status === 'loading'
 
   useEffect(() => {
     if (!isLoading) return
 
-    const timer = window.setInterval(() => {
-      setLoadingIndex((current) => (current + 1) % orders.length)
-    }, 900)
-
+    const timer = window.setInterval(() => setNow(Date.now()), 100)
     return () => window.clearInterval(timer)
   }, [isLoading])
 
-  const activeOrder = orders[loadingIndex]
-  const queue = Array.from({ length: 4 }, (_, index) => orders[(loadingIndex + index + 1) % orders.length])
+  const displayedOrders = liveOrders.length > 0 ? liveOrders : orders
 
   return (
     <main className="min-h-screen overflow-hidden bg-ink text-slate-100">
@@ -47,13 +43,11 @@ function App() {
             {status === 'error' && (
               <div role="alert" className="flex items-center gap-3 rounded-lg border border-[#8f5a55] bg-[#8e1b1b]/20 px-4 py-3 text-sm text-[#f0c4b7]">
                 <AlertCircle size={18} />
-                Não foi possível executar a simulação. Tente novamente.
+                {errorMessage ?? 'Não foi possível executar a simulação. Tente novamente.'}
               </div>
             )}
 
-            {status === 'loading' && (
-              <LoadingSimulation cooks={cooks} activeOrder={activeOrder} queue={queue} />
-            )}
+            {(isLoading || workers.length > 0) && <CookCards workers={workers} orders={displayedOrders} now={now} />}
 
             {result ? (
               <>
@@ -76,7 +70,7 @@ function App() {
 
           <div className="space-y-5">
             <SimulationChart history={history} />
-            <OrderList orders={orders} />
+            <OrderList orders={displayedOrders} />
           </div>
         </div>
 

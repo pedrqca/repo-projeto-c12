@@ -14,12 +14,13 @@ import java.util.regex.Pattern;
 import model.Pedido;
 import model.PedidosPadrao;
 import simulation.ResultadoSimulacao;
+import simulation.EventoSimulacao;
 import simulation.Simulacao;
 
 public class SimulacaoApiServer {
     private static final int PORTA = 8080;
     private static final Pattern COZINHEIROS_PATTERN =
-            Pattern.compile("\\\"quantidadeCozinheiros\\\"\\s*:\\s*(\\d+)");
+            Pattern.compile("\"quantidadeCozinheiros\"\\s*:\\s*(\\d+)");
 
     public static void main(String[] args) throws IOException {
         HttpServer server = HttpServer.create(new InetSocketAddress(PORTA), 0);
@@ -50,8 +51,16 @@ public class SimulacaoApiServer {
 
             int quantidadeCozinheiros = Integer.parseInt(matcher.group(1));
             List<Pedido> pedidos = PedidosPadrao.criar();
-            ResultadoSimulacao resultado = new Simulacao(pedidos, quantidadeCozinheiros).executar();
-            responderJson(exchange, 200, paraJson(resultado));
+                exchange.getResponseHeaders().set("Content-Type", "application/x-ndjson; charset=UTF-8");
+                exchange.sendResponseHeaders(200, 0);
+                try (OutputStream output = exchange.getResponseBody()) {
+                Object monitor = new Object();
+                ResultadoSimulacao resultado = new Simulacao(pedidos, quantidadeCozinheiros)
+                    .executar(evento -> escreverEvento(output, monitor, evento));
+                escreverLinha(output, monitor,
+                    "{\"tipo\":\"SIMULACAO_CONCLUIDA\",\"resultado\":"
+                        + paraJson(resultado) + "}");
+                }
         } catch (IllegalArgumentException e) {
             responderJson(exchange, 400, "{\"erro\":\"" + escapar(e.getMessage()) + "\"}");
         } catch (InterruptedException e) {
@@ -72,6 +81,33 @@ public class SimulacaoApiServer {
                 resultado.getPedidosProcessados(), resultado.getDuracaoSegundos(),
                 resultado.getTempoMinimoTeoricoSegundos(), resultado.getDiferencaSegundos(),
                 resultado.getDiferencaPercentual());
+    }
+
+    private static void escreverEvento(OutputStream output, Object monitor,
+            EventoSimulacao evento) {
+        StringBuilder json = new StringBuilder("{\"tipo\":\"")
+                .append(evento.getTipo()).append("\",\"cozinheiro\":\"")
+                .append(escapar(evento.getCozinheiro())).append("\",\"instante\":")
+                .append(evento.getInstante());
+        Pedido pedido = evento.getPedido();
+        if (pedido != null) {
+            json.append(",\"pedidoId\":").append(pedido.getId())
+                    .append(",\"nomePrato\":\"").append(escapar(pedido.getNomePrato()))
+                    .append("\",\"tempoPreparo\":").append(pedido.getTempoPreparo());
+        }
+        json.append('}');
+        escreverLinha(output, monitor, json.toString());
+    }
+
+    private static void escreverLinha(OutputStream output, Object monitor, String linha) {
+        synchronized (monitor) {
+            try {
+                output.write((linha + "\n").getBytes(StandardCharsets.UTF_8));
+                output.flush();
+            } catch (IOException e) {
+                throw new IllegalStateException("Falha ao transmitir evento da simulacao.", e);
+            }
+        }
     }
 
     private static void adicionarCors(Headers headers) {
